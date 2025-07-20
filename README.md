@@ -26,8 +26,6 @@ This project demonstrates the implementation of a Library Management System usin
 - **Table Creation**: Created tables for branches, employees, members, books, issued status, and return status. Each table includes relevant columns and relationships.
 
 ```sql
-CREATE DATABASE library_db;
-
 DROP TABLE IF EXISTS branch;
 CREATE TABLE branch
 (
@@ -106,7 +104,10 @@ CREATE TABLE return_status
             return_book_isbn VARCHAR(50),
             FOREIGN KEY (return_book_isbn) REFERENCES books(isbn)
 );
-
+ALTER TABLE return_status
+ADD CONSTRAINT fk_issued_status
+FOREIGN KEY (issued_id)
+REFERENCES issued_status(issued_id);
 ```
 
 ### 2. CRUD Operations
@@ -120,8 +121,8 @@ CREATE TABLE return_status
 -- "978-1-60129-456-2', 'To Kill a Mockingbird', 'Classic', 6.00, 'yes', 'Harper Lee', 'J.B. Lippincott & Co.')"
 
 ```sql
-INSERT INTO books(isbn, book_title, category, rental_price, status, author, publisher)
-VALUES('978-1-60129-456-2', 'To Kill a Mockingbird', 'Classic', 6.00, 'yes', 'Harper Lee', 'J.B. Lippincott & Co.');
+INSERT INTO books(isbn,book_title,category,rental_price,status,author,publisher)
+VALUES('978-1-60129-456-2','To Kill a Mockingbird','Classic','6.00','yes','Harper Lee','J.B. Lippincott & Co.')
 SELECT * FROM books;
 ```
 **Task 2: Update an Existing Member's Address**
@@ -137,14 +138,14 @@ WHERE member_id = 'C103';
 
 ```sql
 DELETE FROM issued_status
-WHERE   issued_id =   'IS121';
+WHERE issued_id = 'IS121';
 ```
 
 **Task 4: Retrieve All Books Issued by a Specific Employee**
 -- Objective: Select all books issued by the employee with emp_id = 'E101'.
 ```sql
 SELECT * FROM issued_status
-WHERE issued_emp_id = 'E101'
+WHERE issued_emp_id = 'E101';
 ```
 
 
@@ -152,12 +153,12 @@ WHERE issued_emp_id = 'E101'
 -- Objective: Use GROUP BY to find members who have issued more than one book.
 
 ```sql
-SELECT
-    issued_emp_id,
-    COUNT(*)
+SELECT 
+	issued_emp_id,
+	COUNT(issued_id) as total_book_issued
 FROM issued_status
 GROUP BY 1
-HAVING COUNT(*) > 1
+HAVING COUNT(*)>1;
 ```
 
 ### 3. CTAS (Create Table As Select)
@@ -166,11 +167,13 @@ HAVING COUNT(*) > 1
 
 ```sql
 CREATE TABLE book_issued_cnt AS
-SELECT b.isbn, b.book_title, COUNT(ist.issued_id) AS issue_count
-FROM issued_status as ist
-JOIN books as b
-ON ist.issued_book_isbn = b.isbn
+SELECT b.isbn, b.book_title, COUNT(iss.issued_id) as issue_count
+FROM books as b
+JOIN issued_status as iss
+ON b.isbn = iss.issued_book_isbn
 GROUP BY b.isbn, b.book_title;
+
+SELECT * FROM book_issued_cnt;
 ```
 
 
@@ -181,48 +184,53 @@ The following SQL queries were used to address specific questions:
 Task 7. **Retrieve All Books in a Specific Category**:
 
 ```sql
+SELECT DISTINCT category FROM books;
+
 SELECT * FROM books
-WHERE category = 'Classic';
+WHERE category = 'History';
 ```
 
 8. **Task 8: Find Total Rental Income by Category**:
 
 ```sql
-SELECT 
-    b.category,
-    SUM(b.rental_price),
-    COUNT(*)
-FROM 
-issued_status as ist
-JOIN
-books as b
-ON b.isbn = ist.issued_book_isbn
-GROUP BY 1
+SELECT b.category, SUM(b.rental_price), COUNT(iss.issued_id)
+FROM books as b
+JOIN issued_status as iss
+ON b.isbn = iss.issued_book_isbn
+GROUP BY b.category;
 ```
 
 9. **List Members Who Registered in the Last 180 Days**:
 ```sql
 SELECT * FROM members
-WHERE reg_date >= CURRENT_DATE - INTERVAL '180 days';
+WHERE reg_date >= CURRENT_DATE - INTERVAL'180 days';
 ```
+**Insert New Members**:
+'''sql
+INSERT INTO members(member_id, member_name, member_address, reg_date)
+VALUES
+('C128','K. Kingston','145 Main Street','2025-06-09'),
+('C129','M. Jordan','178 Main Street','2025-05-29')
+'''
 
 10. **List Employees with Their Branch Manager's Name and their branch details**:
 
 ```sql
-SELECT 
-    e1.emp_id,
-    e1.emp_name,
-    e1.position,
-    e1.salary,
-    b.*,
-    e2.emp_name as manager
+SELECT
+            e1.emp_id,
+	e1.emp_name,
+	e1.position,
+	e1.salary,
+	b.branch_id,
+	b.manager_id,
+	e2.emp_name as manager
 FROM employees as e1
-JOIN 
+JOIN
 branch as b
-ON e1.branch_id = b.branch_id    
+ON e1.branch_id = b.branch_id
 JOIN
 employees as e2
-ON e2.emp_id = b.manager_id
+ON e2.emp_id = b.manager_id;
 ```
 
 Task 11. **Create a Table of Books with Rental Price Above a Certain Threshold**:
@@ -230,14 +238,17 @@ Task 11. **Create a Table of Books with Rental Price Above a Certain Threshold**
 CREATE TABLE expensive_books AS
 SELECT * FROM books
 WHERE rental_price > 7.00;
+
+SELECT * FROM expensive_books
 ```
 
 Task 12: **Retrieve the List of Books Not Yet Returned**
 ```sql
-SELECT * FROM issued_status as ist
+SELECT *
+FROM issued_status as iss
 LEFT JOIN
 return_status as rs
-ON rs.issued_id = ist.issued_id
+ON iss.issued_id = rs.issued_id
 WHERE rs.return_id IS NULL;
 ```
 
@@ -247,28 +258,23 @@ WHERE rs.return_id IS NULL;
 Write a query to identify members who have overdue books (assume a 30-day return period). Display the member's_id, member's name, book title, issue date, and days overdue.
 
 ```sql
-SELECT 
-    ist.issued_member_id,
-    m.member_name,
-    bk.book_title,
-    ist.issued_date,
-    -- rs.return_date,
-    CURRENT_DATE - ist.issued_date as over_dues_days
-FROM issued_status as ist
-JOIN 
-members as m
-    ON m.member_id = ist.issued_member_id
-JOIN 
-books as bk
-ON bk.isbn = ist.issued_book_isbn
-LEFT JOIN 
-return_status as rs
-ON rs.issued_id = ist.issued_id
-WHERE 
-    rs.return_date IS NULL
-    AND
-    (CURRENT_DATE - ist.issued_date) > 30
-ORDER BY 1
+SELECT
+	iss.issued_member_id,
+	m.member_name,
+	bk.book_title,
+	iss.issued_date,
+	--rtr.return_date,
+	CURRENT_DATE - iss.issued_date as over_dues_days
+FROM issued_status as iss
+JOIN members as m
+ON m.member_id = iss.issued_member_id
+JOIN books as bk
+ON bk.isbn = iss.issued_book_isbn
+LEFT JOIN return_status as rtr
+ON iss.issued_id = rtr.issued_id
+WHERE rtr.return_date IS NULL
+AND CURRENT_DATE - iss.issued_date > 30
+ORDER BY 1;
 ```
 
 
@@ -406,11 +412,7 @@ ON e.branch_id = b.branch_id
 GROUP BY 1, 2
 ```
 
-**Task 18: Identify Members Issuing High-Risk Books**  
-Write a query to identify members who have issued books more than twice with the status "damaged" in the books table. Display the member name, book title, and the number of times they've issued damaged books.    
-
-
-**Task 19: Stored Procedure**
+**Task 18: Stored Procedure**
 Objective:
 Create a stored procedure to manage the status of books in a library system.
 Description:
@@ -473,22 +475,6 @@ WHERE isbn = '978-0-375-41398-8'
 
 ```
 
-
-
-**Task 20: Create Table As Select (CTAS)**
-Objective: Create a CTAS (Create Table As Select) query to identify overdue books and calculate fines.
-
-Description: Write a CTAS query to create a new table that lists each member and the books they have issued but not returned within 30 days. The table should include:
-    The number of overdue books.
-    The total fines, with each day's fine calculated at $0.50.
-    The number of books issued by each member.
-    The resulting table should show:
-    Member ID
-    Number of overdue books
-    Total fines
-
-
-
 ## Reports
 
 - **Database Schema**: Detailed table structures and relationships.
@@ -499,24 +485,8 @@ Description: Write a CTAS query to create a new table that lists each member and
 
 This project demonstrates the application of SQL skills in creating and managing a library management system. It includes database setup, data manipulation, and advanced querying, providing a solid foundation for data management and analysis.
 
-## How to Use
+## Author - Gaurav Kumar
 
-1. **Clone the Repository**: Clone this repository to your local machine.
-   ```sh
-   git clone https://github.com/najirh/Library-System-Management---P2.git
-   ```
+This project showcases SQL skills essential for database management and analysis.
 
-2. **Set Up the Database**: Execute the SQL scripts in the `database_setup.sql` file to create and populate the database.
-3. **Run the Queries**: Use the SQL queries in the `analysis_queries.sql` file to perform the analysis.
-4. **Explore and Modify**: Customize the queries as needed to explore different aspects of the data or answer additional questions.
-
-## Author - Zero Analyst
-
-This project showcases SQL skills essential for database management and analysis. For more content on SQL and data analysis, connect with me through the following channels:
-
-- **YouTube**: [Subscribe to my channel for tutorials and insights](https://www.youtube.com/@zero_analyst)
-- **Instagram**: [Follow me for daily tips and updates](https://www.instagram.com/zero_analyst/)
-- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/najirr)
-- **Discord**: [Join our community for learning and collaboration](https://discord.gg/36h5f2Z5PK)
-
-Thank you for your interest in this project!
+Thank you for your visit!
